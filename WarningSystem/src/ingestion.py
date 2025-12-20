@@ -48,10 +48,15 @@ def convert_to_ist(utc_iso_string: str) -> str:
 
 
 
-def discover_available_sensors() -> List[Dict[str, any]]:
+def discover_available_sensors(lat: float = DELHI_LAT, lon: float = DELHI_LON, radius: int = 10000) -> List[Dict[str, any]]:
     """
-    Discovers available air quality sensors near Delhi with freshness validation.
+    Discovers available air quality sensors near a location with freshness validation.
     Returns a list of sensors for interactive selection.
+    
+    Args:
+        lat: Latitude of search center (default: Delhi)
+        lon: Longitude of search center (default: Delhi)
+        radius: Search radius in meters (default: 10km)
     
     Returns:
         List of dictionaries containing sensor information:
@@ -61,12 +66,12 @@ def discover_available_sensors() -> List[Dict[str, any]]:
     try:
         # Step A: Search for candidate sensors
         params = {
-            "coordinates": f"{DELHI_LAT},{DELHI_LON}",
-            "radius": 10000,  # 10km radius
+            "coordinates": f"{lat},{lon}",
+            "radius": radius,
             "limit": 10  # Get top 10 candidates for validation
         }
         
-        print(f"[DISCOVERY] Searching for sensors within 10km of Delhi...")
+        print(f"[DISCOVERY] Searching for sensors within {radius/1000:.0f}km of ({lat:.4f}, {lon:.4f})...")
         
         # Prepare headers with API key if available
         headers = {}

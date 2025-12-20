@@ -12,9 +12,11 @@ from pathlib import Path
 from src.ingestion import fetch_historical_data, fetch_live_data, discover_available_sensors, convert_to_ist
 from src.analysis import detect_anomalies
 from src.ai_adapter import get_ai_explanation
-from src.satellite import fetch_sentinel_indices
+from src.satellite_manager import SentinelClient
 from src import config
 from datetime import datetime
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 
 
 def save_to_json(result: dict, current_value: float, timestamp: str):
@@ -114,9 +116,12 @@ def print_diagnostic_report(result: dict, current_value: float, timestamp: str):
     print("\n" + "=" * 70)
 
 
-def select_sensor_interactively():
+def select_sensor_interactively(location_coords: dict):
     """
     Displays available sensors and prompts user to select one.
+    
+    Args:
+        location_coords: Dictionary with latitude and longitude
     
     Returns:
         Selected location ID (int), or None if no sensors available
@@ -126,7 +131,11 @@ def select_sensor_interactively():
     print("=" * 70 + "\n")
     
     # Discover available sensors
-    sensors = discover_available_sensors()
+    sensors = discover_available_sensors(
+        lat=location_coords.get("latitude"),
+        lon=location_coords.get("longitude"),
+        radius=10000  # 10km radius
+    )
     
     if not sensors or len(sensors) == 0:
         print("[WARNING] No fresh sensors found.")
@@ -158,12 +167,14 @@ def select_sensor_interactively():
             return None
 
 
-def run_pipeline(location_id=None):
+def run_pipeline(location_id=None, sentinel_client=None, location_coords=None):
     """
     Executes a single iteration of the monitoring pipeline.
     
     Args:
         location_id: Optional location ID to monitor. If None, auto-discovers.
+        sentinel_client: SentinelClient instance for satellite data
+        location_coords: Dictionary with latitude, longitude, and name
     
     Returns:
         True if successful, False otherwise.
@@ -190,27 +201,56 @@ def run_pipeline(location_id=None):
     print(f"[SUCCESS] Live data retrieved: {current_value} µg/m³")
     print()
     
-    # Step 2.5: Fetch Satellite Data
-    print("[PIPELINE] Step 2.5/4: Fetching Satellite Data...")
-    try:
-        sat_data = fetch_sentinel_indices(
-            config.LOCATION_COORDS["latitude"],
-            config.LOCATION_COORDS["longitude"]
-        )
-        print(f"[SUCCESS] Satellite data retrieved from {sat_data['satellite']}")
-        print(f"[SATELLITE] {sat_data['satellite']} Data Loaded")
-        print(f"|-- Water ({sat_data['water']['index']}): {sat_data['water']['value']:.3f} ({sat_data['water']['status']})")
-        print(f"|-- Land ({sat_data['land']['index']}): {sat_data['land']['value']:.3f} ({sat_data['land']['status']})")
-        print(f"|-- Last Pass: {sat_data['last_pass']}")
+    # Step 2.5: Fetch Satellite Data (Real API)
+    print("[PIPELINE] Step 2.5/4: Fetching Satellite Data from Sentinel Hub...")
+    sat_data = None
+    sat_image_path = None
+    
+    if sentinel_client and location_coords:
+        try:
+            # Get coordinates from location_coords parameter
+            lat = location_coords.get("latitude")
+            lon = location_coords.get("longitude")
+            
+            # Fetch NDVI/NDWI statistics
+            sat_data = sentinel_client.get_geo_stats(lat, lon)
+            
+            if sat_data and sat_data.get("data_source") != "Unavailable":
+                print(f"[SUCCESS] Satellite statistics retrieved")
+                print(f"[SATELLITE] 📊 {sat_data['satellite']} Data ({sat_data.get('data_source', 'Live API')})")
+                
+                water = sat_data.get('water', {})
+                land = sat_data.get('land', {})
+                
+                if water.get('value') is not None:
+                    print(f"|-- 💧 Water ({water['index']}): {water['value']:.3f} ({water['status']})")
+                else:
+                    print(f"|-- 💧 Water: Data Unavailable")
+                    
+                if land.get('value') is not None:
+                    print(f"|-- 🌳 Land ({land['index']}): {land['value']:.3f} ({land['status']})")
+                else:
+                    print(f"|-- 🌳 Land: Data Unavailable")
+                
+                # Fetch satellite image
+                print(f"[SATELLITE] 📸 Fetching satellite imagery...")
+                sat_image_path = sentinel_client.get_satellite_image(lat, lon)
+                
+                print()
+            else:
+                print(f"[WARNING] Satellite data unavailable, continuing with air quality only")
+                print()
+        except Exception as e:
+            print(f"[WARNING] Satellite API error: {e}")
+            print(f"[INFO] Continuing with air quality data only")
+            print()
+    else:
+        print(f"[INFO] Sentinel Hub client not initialized (check API credentials)")
+        print(f"[INFO] Continuing with air quality data only")
         print()
-    except Exception as e:
-        print(f"[WARNING] Failed to fetch satellite data: {e}")
-        sat_data = None
     
     # Step 3: Perform Anomaly Detection
-
-    
-    print("[PIPELINE] Step 3/3: Analyzing Anomalies...")
+    print("[PIPELINE] Step 3/4: Analyzing Anomalies...")
     result = detect_anomalies(historical_data, current_value)
     
     if result["status"] == "ERROR":
@@ -271,6 +311,57 @@ def run_pipeline(location_id=None):
     return True
 
 
+def get_location_coordinates():
+    """
+    Get location coordinates from user input using geocoding.
+    
+    Returns:
+        Dictionary with latitude and longitude, or None if failed
+    """
+    print("\n" + "=" * 70)
+    print("  LOCATION SETUP")
+    print("=" * 70 + "\n")
+    
+    # Option to use default Delhi coordinates
+    use_default = input("Use default location (Delhi, India)? (y/n): ").strip().lower()
+    
+    if use_default == 'y':
+        print(f"[SELECTED] Using Delhi, India (28.6139°N, 77.2090°E)\n")
+        return {"latitude": 28.6139, "longitude": 77.2090, "name": "Delhi, India"}
+    
+    # Get custom location
+    while True:
+        try:
+            location_name = input("Enter location (city, country): ").strip()
+            
+            if not location_name:
+                print("[ERROR] Location cannot be empty")
+                continue
+            
+            print(f"[INFO] Geocoding '{location_name}'...")
+            
+            geolocator = Nominatim(user_agent="environmental_monitoring_system")
+            location = geolocator.geocode(location_name, timeout=10)
+            
+            if location:
+                print(f"[SUCCESS] Found: {location.address}")
+                print(f"[COORDINATES] {location.latitude:.4f}°N, {location.longitude:.4f}°E\n")
+                return {
+                    "latitude": location.latitude,
+                    "longitude": location.longitude,
+                    "name": location.address
+                }
+            else:
+                print(f"[ERROR] Location '{location_name}' not found. Try again.")
+                
+        except (GeocoderTimedOut, GeocoderServiceError) as e:
+            print(f"[ERROR] Geocoding service error: {e}")
+            print("[INFO] Try again or use default location")
+        except KeyboardInterrupt:
+            print("\n[SYSTEM] Location setup cancelled")
+            return None
+
+
 def main():
     """Main execution with continuous monitoring loop."""
     
@@ -279,11 +370,25 @@ def main():
     print(f"[SYSTEM] Starting Early Warning Intelligence Layer...")
     print(f"[CONFIG] Target City: {config.TARGET_CITY}")
     print(f"[CONFIG] Parameter: {config.PARAMETER}")
-    print(f"[CONFIG] API Key: {'Configured ✓' if config.API_KEY else 'Not configured (using simulated data)'}")
+    print(f"[CONFIG] OpenAQ API: {'Configured ✓' if config.API_KEY else 'Not configured'}")
+    
+    # Initialize Sentinel Hub client
+    print(f"[CONFIG] Initializing Sentinel Hub client...")
+    sentinel_client = SentinelClient()
+    if sentinel_client.client_id and sentinel_client.client_secret:
+        print(f"[CONFIG] Sentinel Hub: Configured ✓")
+    else:
+        print(f"[CONFIG] Sentinel Hub: Not configured (will skip satellite data)")
     print()
     
+    # Get location coordinates
+    location_coords = get_location_coordinates()
+    if not location_coords:
+        print("[INFO] Location setup failed. Exiting...")
+        return
+    
     # Interactive sensor selection
-    selected_location_id = select_sensor_interactively()
+    selected_location_id = select_sensor_interactively(location_coords)
     
     if selected_location_id is None:
         print("[INFO] No sensor selected. Exiting...")
@@ -296,10 +401,15 @@ def main():
             iteration += 1
             print(f"\n{'='*70}")
             print(f"  ITERATION #{iteration} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}")
+            print(f"  Location: {location_coords.get('name', 'Unknown')}")
             print(f"{'='*70}\n")
             
-            # Run the pipeline with selected sensor
-            run_pipeline(location_id=selected_location_id)
+            # Run the pipeline with selected sensor and location
+            run_pipeline(
+                location_id=selected_location_id,
+                sentinel_client=sentinel_client,
+                location_coords=location_coords
+            )
             
             # Sleep for 5 minutes
             print(f"\n💤 Sleeping for 5 minutes... Press Ctrl+C to stop.")

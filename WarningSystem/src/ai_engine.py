@@ -80,45 +80,57 @@ def generate_comprehensive_advisory(sensor_data: Dict, satellite_data: Dict = No
     advisory_parts.append(f"📊 Baseline Average: {baseline_mean:.1f} µg/m³")
     
     # Section 2: ENVIRONMENTAL CONTEXT (Satellite Data)
-    if satellite_data:
+    if satellite_data and satellite_data.get("data_source") != "Unavailable":
         advisory_parts.append(f"\n\n🛰️ ENVIRONMENTAL CONTEXT")
         advisory_parts.append("-" * 50)
         
         water_data = satellite_data.get('water', {})
         land_data = satellite_data.get('land', {})
         
-        ndwi_value = water_data.get('value', 0)
+        ndwi_value = water_data.get('value')
         ndwi_status = water_data.get('status', 'UNKNOWN')
-        ndvi_value = land_data.get('value', 0)
+        ndvi_value = land_data.get('value')
         ndvi_status = land_data.get('status', 'UNKNOWN')
         
-        advisory_parts.append(f"💧 Water Health (NDWI): {ndwi_value:.3f} - {ndwi_status.replace('_', ' ')}")
-        advisory_parts.append(f"🌳 Land Vegetation (NDVI): {ndvi_value:.3f} - {ndvi_status.replace('_', ' ')}")
-        
-        # Correlate satellite data with air quality
-        advisory_parts.append("\n🔗 Environmental Correlations:")
-        
-        # NDVI correlation
-        if ndvi_value < 0.2:
-            advisory_parts.append("• Low vegetation cover (Urban Heat Island effect) worsens air pollution")
-            advisory_parts.append("  - Lack of trees reduces natural air filtration")
-            advisory_parts.append("  - Concrete surfaces increase temperature and pollutant concentration")
-        elif ndvi_value < 0.35:
-            advisory_parts.append("• Moderate vegetation provides some natural air filtration")
+        # Only display if values are not None
+        if ndwi_value is not None:
+            advisory_parts.append(f"💧 Water Health (NDWI): {ndwi_value:.3f} - {ndwi_status.replace('_', ' ')}")
         else:
-            advisory_parts.append("• Good vegetation cover helps filter pollutants naturally")
-        
-        # NDWI correlation
-        if ndwi_value < 0.0:
-            advisory_parts.append("• Water stress detected - increased dust and particulate matter likely")
-            advisory_parts.append("  - Dry conditions contribute to airborne particles")
-        elif ndwi_value < 0.1:
-            advisory_parts.append("• Stressed water bodies may contribute to dust in the air")
+            advisory_parts.append(f"💧 Water Health (NDWI): Data Unavailable")
+            
+        if ndvi_value is not None:
+            advisory_parts.append(f"🌳 Land Vegetation (NDVI): {ndvi_value:.3f} - {ndvi_status.replace('_', ' ')}")
         else:
-            advisory_parts.append("• Adequate water presence helps reduce dust levels")
+            advisory_parts.append(f"🌳 Land Vegetation (NDVI): Data Unavailable")
+        
+        # Correlate satellite data with air quality (only if values exist)
+        if ndvi_value is not None or ndwi_value is not None:
+            advisory_parts.append("\n🔗 Environmental Correlations:")
+            
+            # NDVI correlation
+            if ndvi_value is not None:
+                if ndvi_value < 0.2:
+                    advisory_parts.append("• Low vegetation cover (Urban Heat Island effect) worsens air pollution")
+                    advisory_parts.append("  - Lack of trees reduces natural air filtration")
+                    advisory_parts.append("  - Concrete surfaces increase temperature and pollutant concentration")
+                elif ndvi_value < 0.35:
+                    advisory_parts.append("• Moderate vegetation provides some natural air filtration")
+                else:
+                    advisory_parts.append("• Good vegetation cover helps filter pollutants naturally")
+            
+            # NDWI correlation
+            if ndwi_value is not None:
+                if ndwi_value < 0.0:
+                    advisory_parts.append("• Water stress detected - increased dust and particulate matter likely")
+                    advisory_parts.append("  - Dry conditions contribute to airborne particles")
+                elif ndwi_value < 0.1:
+                    advisory_parts.append("• Stressed water bodies may contribute to dust in the air")
+                else:
+                    advisory_parts.append("• Adequate water presence helps reduce dust levels")
         
         advisory_parts.append(f"\n📡 Data Source: {satellite_data.get('satellite', 'Unknown')}")
-        advisory_parts.append(f"   Last Pass: {satellite_data.get('last_pass', 'Unknown')}")
+        time_range = satellite_data.get('time_range', satellite_data.get('last_pass', 'Unknown'))
+        advisory_parts.append(f"   Time Range: {time_range}")
     
     # Section 3: HEALTH IMPLICATIONS
     advisory_parts.append(f"\n\n🩺 HEALTH IMPLICATIONS")
