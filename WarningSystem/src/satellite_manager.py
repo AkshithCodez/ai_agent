@@ -94,92 +94,82 @@ class SentinelClient:
             lon: Longitude of the location
         
         Returns:
-            Dictionary with NDVI, NDWI values and status
+            Dictionary with NDVI, NDWI values and status (NEVER returns None)
         """
         # Get authentication token
         if not self.token:
             token = self._get_token()
             if not token:
-                return self._fallback_stats()
+                print("[SENTINEL] No authentication token, using fallback values")
+                return self._get_fallback_values()
         
         try:
             url = f"{self.BASE_URL}/api/v1/statistics"
             
-            # Create bounding box (1km around point)
-            bbox = self._create_bbox(lat, lon, size_km=1.0)
+            # Create bounding box (1km around point) - LON, LAT order
+            delta = 0.01  # Approximately 1km
+            bbox = [lon - delta, lat - delta, lon + delta, lat + delta]
             
             # Date range: last 30 days
             end_date = datetime.now()
             start_date = end_date - timedelta(days=30)
             
-            # Evalscript to calculate NDVI and NDWI
+            # Evalscript for Statistical API - returns NDVI and NDWI
             evalscript = """
             //VERSION=3
             function setup() {
-                return {
-                    input: [{
-                        bands: ["B03", "B04", "B08"],
-                        units: "DN"
-                    }],
-                    output: [
-                        {
-                            id: "ndvi",
-                            bands: 1
-                        },
-                        {
-                            id: "ndwi",
-                            bands: 1
-                        }
-                    ]
-                };
+              return {
+                input: ["B04", "B08", "B03", "dataMask"],
+                output: [
+                  {id: "ndvi", bands: 1},
+                  {id: "ndwi", bands: 1},
+                  {id: "dataMask", bands: 1}
+                ]
+              };
             }
-            
             function evaluatePixel(sample) {
-                // NDVI = (NIR - Red) / (NIR + Red)
-                let ndvi = (sample.B08 - sample.B04) / (sample.B08 + sample.B04);
-                
-                // NDWI = (Green - NIR) / (Green + NIR)
-                let ndwi = (sample.B03 - sample.B08) / (sample.B03 + sample.B08);
-                
-                return {
-                    ndvi: [ndvi],
-                    ndwi: [ndwi]
-                };
+              let ndvi = (sample.B08 - sample.B04) / (sample.B08 + sample.B04);
+              let ndwi = (sample.B03 - sample.B08) / (sample.B03 + sample.B08);
+              return {
+                ndvi: [ndvi],
+                ndwi: [ndwi],
+                dataMask: [sample.dataMask]
+              };
             }
             """
             
-            # Request payload
+            # CORRECT Payload Structure for Statistical API
             payload = {
                 "input": {
                     "bounds": {
                         "bbox": bbox,
                         "properties": {
-                            "crs": "http://www.opengis.net/def/crs/EPSG/0/4326"
+                            "crs": "http://www.opengis.net/def/crs/EPSG/0/4326"  # REQUIRED
                         }
                     },
                     "data": [{
                         "type": "sentinel-2-l2a",
                         "dataFilter": {
                             "timeRange": {
-                                "from": start_date.strftime("%Y-%m-%dT00:00:00Z"),
-                                "to": end_date.strftime("%Y-%m-%dT23:59:59Z")
+                                "from": start_date.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                "to": end_date.strftime("%Y-%m-%dT%H:%M:%SZ")
                             },
+                            "mosaickingOrder": "leastCC",  # Least cloud coverage
                             "maxCloudCoverage": 20
                         }
                     }]
                 },
                 "aggregation": {
                     "timeRange": {
-                        "from": start_date.strftime("%Y-%m-%dT00:00:00Z"),
-                        "to": end_date.strftime("%Y-%m-%dT23:59:59Z")
+                        "from": start_date.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "to": end_date.strftime("%Y-%m-%dT%H:%M:%SZ")
                     },
                     "aggregationInterval": {
                         "of": "P1D"
                     },
+                    "resx": 10,  # REQUIRED: Resolution in meters
+                    "resy": 10,  # REQUIRED: Resolution in meters
                     "evalscript": evalscript
-                },
-                "calculations": {
-                    "default": {}
                 }
             }
             
@@ -193,30 +183,40 @@ class SentinelClient:
             
             data = response.json()
             
-            # Extract and average NDVI/NDWI values
+            # Extract NDVI/NDWI values from response
             ndvi_values = []
             ndwi_values = []
             
-            for item in data.get("data", []):
-                outputs = item.get("outputs", {})
-                if "ndvi" in outputs and "ndwi" in outputs:
-                    ndvi_stats = outputs["ndvi"].get("bands", {}).get("B0", {}).get("stats", {})
-                    ndwi_stats = outputs["ndwi"].get("bands", {}).get("B0", {}).get("stats", {})
+            # Parse the Statistical API response
+            if 'data' in data and len(data['data']) > 0:
+                for item in data['data']:
+                    outputs = item.get('outputs', {})
                     
-                    if "mean" in ndvi_stats:
-                        ndvi_values.append(ndvi_stats["mean"])
-                    if "mean" in ndwi_stats:
-                        ndwi_values.append(ndwi_stats["mean"])
+                    # Extract NDVI
+                    if 'ndvi' in outputs:
+                        ndvi_stats = outputs['ndvi'].get('bands', {}).get('B0', {}).get('stats', {})
+                        if 'mean' in ndvi_stats:
+                            ndvi_values.append(ndvi_stats['mean'])
+                    
+                    # Extract NDWI
+                    if 'ndwi' in outputs:
+                        ndwi_stats = outputs['ndwi'].get('bands', {}).get('B0', {}).get('stats', {})
+                        if 'mean' in ndwi_stats:
+                            ndwi_values.append(ndwi_stats['mean'])
             
-            # Calculate averages
-            ndvi = sum(ndvi_values) / len(ndvi_values) if ndvi_values else 0.0
-            ndwi = sum(ndwi_values) / len(ndwi_values) if ndwi_values else 0.0
+            # Calculate averages or use fallback
+            if ndvi_values and ndwi_values:
+                ndvi = sum(ndvi_values) / len(ndvi_values)
+                ndwi = sum(ndwi_values) / len(ndwi_values)
+                print(f"[SENTINEL] ✓ Retrieved live statistics (NDVI: {ndvi:.3f}, NDWI: {ndwi:.3f})")
+            else:
+                # No data in response - use realistic fallback
+                print("[SENTINEL] No satellite data in response, using fallback values")
+                return self._get_fallback_values()
             
             # Determine status
             ndvi_status = self._get_ndvi_status(ndvi)
             ndwi_status = self._get_ndwi_status(ndwi)
-            
-            print(f"[SENTINEL] ✓ Retrieved live statistics (30-day average)")
             
             return {
                 "satellite": "Sentinel-2A",
@@ -241,10 +241,10 @@ class SentinelClient:
             
         except requests.exceptions.RequestException as e:
             print(f"[WARNING] Sentinel Hub Statistical API failed: {e}")
-            return self._fallback_stats()
+            return self._get_fallback_values()
         except Exception as e:
             print(f"[WARNING] Error processing satellite statistics: {e}")
-            return self._fallback_stats()
+            return self._get_fallback_values()
     
     def get_satellite_image(self, lat: float, lon: float) -> Optional[str]:
         """
@@ -373,20 +373,32 @@ class SentinelClient:
         else:
             return "DROUGHT_TURBID"
     
-    def _fallback_stats(self) -> Dict:
-        """Return fallback data structure when API is unavailable."""
+    def _get_fallback_values(self) -> Dict:
+        """
+        Return realistic fallback data when API is unavailable.
+        This ensures the system NEVER crashes due to missing satellite data.
+        """
         return {
             "satellite": "Sentinel-2A",
             "product": "L2A_Surface_Reflectance",
-            "data_source": "Unavailable",
+            "data_source": "Simulated (Fallback)",
+            "time_range": "Unavailable",
+            "location": {
+                "latitude": 0.0,
+                "longitude": 0.0
+            },
             "water": {
                 "index": "NDWI",
-                "value": None,
-                "status": "DATA_UNAVAILABLE"
+                "value": -0.05,  # Typical for dry urban areas
+                "status": "SIMULATED"
             },
             "land": {
                 "index": "NDVI",
-                "value": None,
-                "status": "DATA_UNAVAILABLE"
+                "value": 0.15,  # Typical for urban areas with minimal vegetation
+                "status": "SIMULATED"
             }
         }
+    
+    def _fallback_stats(self) -> Dict:
+        """Legacy fallback method - redirects to _get_fallback_values."""
+        return self._get_fallback_values()

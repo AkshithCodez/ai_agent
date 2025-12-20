@@ -80,9 +80,14 @@ def generate_comprehensive_advisory(sensor_data: Dict, satellite_data: Dict = No
     advisory_parts.append(f"📊 Baseline Average: {baseline_mean:.1f} µg/m³")
     
     # Section 2: ENVIRONMENTAL CONTEXT (Satellite Data)
-    if satellite_data and satellite_data.get("data_source") != "Unavailable":
-        advisory_parts.append(f"\n\n🛰️ ENVIRONMENTAL CONTEXT")
-        advisory_parts.append("-" * 50)
+    # Defensive check: Only display if satellite_data exists and is not unavailable/fallback
+    if satellite_data and isinstance(satellite_data, dict):
+        data_source = satellite_data.get("data_source", "Unknown")
+        
+        # Only show satellite section if we have real or simulated data (not "Unavailable")
+        if data_source not in ["Unavailable", "Simulated (Fallback)"]:
+            advisory_parts.append(f"\n\n🛰️ ENVIRONMENTAL CONTEXT")
+            advisory_parts.append("-" * 50)
         
         water_data = satellite_data.get('water', {})
         land_data = satellite_data.get('land', {})
