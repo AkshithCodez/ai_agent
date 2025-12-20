@@ -20,24 +20,24 @@ SEARCH_RADIUS = 25000  # 25km radius around Delhi center
 
 def get_active_location_id() -> Optional[int]:
     """
-    Dynamically discovers an active air quality sensor in India.
-    Uses country code filtering to find recently updated sensors.
+    Dynamically discovers an active air quality sensor near Delhi.
+    Uses geospatial radius search to find recently updated sensors.
     
     Returns:
         Location ID (int) if found, None otherwise
     """
     try:
-        # Query locations endpoint - simplified approach using country code
-        # OpenAQ V3 API is strict about parameter formats, so we'll use basic filtering
+        # Use geospatial radius search around Delhi coordinates
+        # This is the correct approach for OpenAQ V3 API
+        # Note: V3 API does not support order_by=lastUpdated, results are sorted by distance
         params = {
-            "country": "IN",  # India country code
-            "parameters_id": "2",  # PM2.5 parameter
-            "limit": 10,  # Get top 10 to find one near Delhi
-            "order_by": "lastUpdated",
-            "sort": "desc"
+            "coordinates": f"{DELHI_LAT},{DELHI_LON}",  # Comma-separated string
+            "radius": SEARCH_RADIUS,  # 25km radius
+            "limit": 1  # Get the closest match
         }
         
-        print(f"[DISCOVERY] Searching for active PM2.5 sensors in India...")
+        print(f"[DISCOVERY] Searching for active sensors within {SEARCH_RADIUS/1000}km of Delhi...")
+
         
         # Prepare headers with API key if available
         headers = {}
@@ -55,37 +55,21 @@ def get_active_location_id() -> Optional[int]:
         data = response.json()
         
         if "results" not in data or len(data["results"]) == 0:
-            print("[WARNING] No active sensors found in India.")
+            print("[WARNING] No active sensors found near Delhi.")
             return None
         
-        # Try to find a sensor near Delhi, otherwise use the first active one
-        best_location = None
-        for location in data["results"]:
-            location_id = location.get("id")
-            location_name = location.get("name", "Unknown")
-            coords = location.get("coordinates", {})
-            
-            if coords:
-                lat = coords.get("latitude", 0)
-                lon = coords.get("longitude", 0)
-                
-                # Check if location is reasonably close to Delhi (within ~50km)
-                if abs(lat - DELHI_LAT) < 0.5 and abs(lon - DELHI_LON) < 0.5:
-                    print(f"[SUCCESS] Found sensor near Delhi: {location_name} (ID: {location_id})")
-                    return location_id
-            
-            # Keep first location as fallback
-            if best_location is None:
-                best_location = (location_id, location_name)
+        # Extract the location ID from the first (best) result
+        location = data["results"][0]
+        location_id = location.get("id")
+        location_name = location.get("name", "Unknown")
+        coords = location.get("coordinates", {})
+        lat = coords.get("latitude", "N/A")
+        lon = coords.get("longitude", "N/A")
         
-        # Use fallback if no Delhi sensor found
-        if best_location:
-            location_id, location_name = best_location
-            print(f"[SUCCESS] Using active sensor: {location_name} (ID: {location_id})")
-            return location_id
+        print(f"[SUCCESS] Location discovered: {location_name} (ID: {location_id})")
+        print(f"[INFO] Coordinates: {lat}, {lon}")
         
-        print("[WARNING] No suitable sensors found.")
-        return None
+        return location_id
     
     except requests.exceptions.RequestException as e:
         print(f"[WARNING] Failed to discover location: {e}")
