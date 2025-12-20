@@ -12,6 +12,7 @@ from pathlib import Path
 from src.ingestion import fetch_historical_data, fetch_live_data, discover_available_sensors, convert_to_ist
 from src.analysis import detect_anomalies
 from src.ai_adapter import get_ai_explanation
+from src.satellite import fetch_sentinel_indices
 from src import config
 from datetime import datetime
 
@@ -41,6 +42,7 @@ def save_to_json(result: dict, current_value: float, timestamp: str):
         "baseline_std": result.get("baseline_std"),
         "city": config.TARGET_CITY,
         "parameter": config.PARAMETER,
+        "satellite_data": result.get("satellite_data", None),
         "ai_explanation": result.get("ai_explanation", "N/A"),
         "ai_message": result.get("ai_message", "N/A")  # Comprehensive advisory
     }
@@ -188,7 +190,26 @@ def run_pipeline(location_id=None):
     print(f"[SUCCESS] Live data retrieved: {current_value} µg/m³")
     print()
     
+    # Step 2.5: Fetch Satellite Data
+    print("[PIPELINE] Step 2.5/4: Fetching Satellite Data...")
+    try:
+        sat_data = fetch_sentinel_indices(
+            config.LOCATION_COORDS["latitude"],
+            config.LOCATION_COORDS["longitude"]
+        )
+        print(f"[SUCCESS] Satellite data retrieved from {sat_data['satellite']}")
+        print(f"[SATELLITE] {sat_data['satellite']} Data Loaded")
+        print(f"|-- Water ({sat_data['water']['index']}): {sat_data['water']['value']:.3f} ({sat_data['water']['status']})")
+        print(f"|-- Land ({sat_data['land']['index']}): {sat_data['land']['value']:.3f} ({sat_data['land']['status']})")
+        print(f"|-- Last Pass: {sat_data['last_pass']}")
+        print()
+    except Exception as e:
+        print(f"[WARNING] Failed to fetch satellite data: {e}")
+        sat_data = None
+    
     # Step 3: Perform Anomaly Detection
+
+    
     print("[PIPELINE] Step 3/3: Analyzing Anomalies...")
     result = detect_anomalies(historical_data, current_value)
     
@@ -197,6 +218,10 @@ def run_pipeline(location_id=None):
         return False
     
     print("[SUCCESS] Analysis complete.")
+    
+    # Add satellite data to result
+    if sat_data:
+        result['satellite_data'] = sat_data
     
     # Step 4: AI Intelligence Report (Comprehensive Advisory)
     print("\n[AI] 🧠 Generating Comprehensive Intelligence Report...")
@@ -213,7 +238,7 @@ def run_pipeline(location_id=None):
             "baseline_std": result.get("baseline_std", 0)
         }
         
-        ai_message = generate_comprehensive_advisory(sensor_data)
+        ai_message = generate_comprehensive_advisory(sensor_data, satellite_data=sat_data)
         
         print(f"\n{'='*70}")
         print("  AI INTELLIGENCE REPORT")

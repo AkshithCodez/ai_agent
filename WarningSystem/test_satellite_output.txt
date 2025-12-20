@@ -1,0 +1,48 @@
+﻿======================================================================
+TEST 1: Satellite Data Generation
+======================================================================
+{
+  "satellite": "Sentinel-2A",
+  "product": "L2A_Surface_Reflectance",
+  "last_pass": "2025-12-17T21:55:05Z",
+  "location": {
+    "latitude": 28.6139,
+    "longitude": 77.209
+  },
+  "water": {
+    "index": "NDWI",
+    "value": -0.134,
+    "status": "DROUGHT_TURBID"
+  },
+  "land": {
+    "index": "NDVI",
+    "value": 0.294,
+    "status": "MODERATE_VEGETATION"
+  }
+}
+
+======================================================================
+TEST 2: AI Advisory with Satellite Data
+======================================================================
+python : Traceback (most recent call last):
+At line:1 char:1
++ python test_satellite_integration.py 2>&1 | Out-File 
+-FilePath test_s ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (mos 
+   t recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\reddy\Downloads\Hackathon\Agentathon\ai_age
+nt\WarningSystem\test_satellite_integration.py", line 30, 
+in <module>
+    print(advisory)
+    ~~~~~^^^^^^^^^^
+  File "C:\Program 
+Files\Python313\Lib\encodings\cp1252.py", line 19, in encode
+    return 
+codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           
+~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character 
+'\U0001f6d1' in position 0: character maps to <undefined>

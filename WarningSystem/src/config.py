@@ -14,6 +14,13 @@ load_dotenv()
 TARGET_CITY = "Delhi"
 PARAMETER = "pm25"
 
+# Geographic Coordinates (for satellite data queries)
+# Delhi coordinates: Connaught Place, Central Delhi
+LOCATION_COORDS = {
+    "latitude": 28.6139,
+    "longitude": 77.2090
+}
+
 # API Configuration
 API_KEY = os.getenv("OPENAQ_API_KEY")  # Load API key from environment
 
