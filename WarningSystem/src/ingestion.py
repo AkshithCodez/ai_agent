@@ -7,7 +7,7 @@ Falls back to simulated data for demo purposes when API is unavailable.
 import requests
 import random
 import math
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 from datetime import datetime, timedelta, timezone
 from dateutil import parser as dateutil_parser
 from . import config
@@ -19,21 +19,51 @@ DELHI_LON = 77.2090
 SEARCH_RADIUS = 25000  # 25km radius around Delhi center
 
 
-def get_active_location_id() -> Optional[int]:
+def convert_to_ist(utc_iso_string: str) -> str:
     """
-    Dynamically discovers an active air quality sensor near Delhi with freshness validation.
-    Uses geospatial radius search and validates that sensors have data from the last 24 hours.
+    Converts a UTC ISO timestamp to Indian Standard Time (IST).
+    
+    Args:
+        utc_iso_string: UTC timestamp in ISO format (e.g., "2025-12-20T08:30:00Z")
     
     Returns:
-        Location ID (int) if a fresh sensor is found, None otherwise
+        Formatted IST timestamp string (e.g., "2025-12-20 14:00:00 IST")
+    """
+    try:
+        # Parse the UTC timestamp
+        utc_time = dateutil_parser.parse(utc_iso_string)
+        
+        # Ensure it's timezone-aware
+        if utc_time.tzinfo is None:
+            utc_time = utc_time.replace(tzinfo=timezone.utc)
+        
+        # Convert to IST (UTC + 5:30)
+        ist_offset = timedelta(hours=5, minutes=30)
+        ist_time = utc_time + ist_offset
+        
+        # Format as readable string
+        return ist_time.strftime("%Y-%m-%d %H:%M:%S IST")
+    except (ValueError, TypeError) as e:
+        return f"Invalid timestamp: {e}"
+
+
+
+def discover_available_sensors() -> List[Dict[str, any]]:
+    """
+    Discovers available air quality sensors near Delhi with freshness validation.
+    Returns a list of sensors for interactive selection.
+    
+    Returns:
+        List of dictionaries containing sensor information:
+        [{"id": int, "name": str, "last_updated": str, "last_updated_ist": str}, ...]
+        Returns empty list if no fresh sensors found.
     """
     try:
         # Step A: Search for candidate sensors
-        # Fetch top 10 candidates to validate freshness
         params = {
-            "coordinates": f"{DELHI_LAT},{DELHI_LON}",  # Comma-separated string
-            "radius": 10000,  # 10km radius for better coverage
-            "limit": 10  # Get top 10 candidates for freshness validation
+            "coordinates": f"{DELHI_LAT},{DELHI_LON}",
+            "radius": 10000,  # 10km radius
+            "limit": 10  # Get top 10 candidates for validation
         }
         
         print(f"[DISCOVERY] Searching for sensors within 10km of Delhi...")
@@ -55,36 +85,32 @@ def get_active_location_id() -> Optional[int]:
         
         if "results" not in data or len(data["results"]) == 0:
             print("[WARNING] No sensors found near Delhi.")
-            return None
+            return []
         
-        # Step B: Validate freshness (24-hour rule)
+        # Step B: Validate freshness and collect fresh sensors
         print(f"[VALIDATION] Checking freshness of {len(data['results'])} candidates...")
         
         current_time = datetime.now(timezone.utc)
         freshness_threshold = timedelta(hours=24)
+        fresh_sensors = []
         
         for location in data["results"]:
             location_id = location.get("id")
             location_name = location.get("name", "Unknown")
-            coords = location.get("coordinates", {})
-            lat = coords.get("latitude", "N/A")
-            lon = coords.get("longitude", "N/A")
             
             # Extract the last update timestamp
             datetime_last = location.get("datetimeLast")
             
             if datetime_last is None:
-                print(f"[SKIP] {location_name} (ID: {location_id}) - No timestamp available")
                 continue
             
-            # Parse the timestamp (it's a dict with 'utc' and 'local' keys)
+            # Parse the timestamp
             if isinstance(datetime_last, dict):
                 timestamp_str = datetime_last.get("utc")
             else:
                 timestamp_str = datetime_last
             
             if not timestamp_str:
-                print(f"[SKIP] {location_name} (ID: {location_id}) - Invalid timestamp")
                 continue
             
             try:
@@ -100,30 +126,50 @@ def get_active_location_id() -> Optional[int]:
                 
                 # Check if data is fresh (within 24 hours)
                 if time_diff < freshness_threshold:
-                    print(f"[SUCCESS] Found fresh sensor: {location_name} (ID: {location_id})")
-                    print(f"[INFO] Last updated: {timestamp_str} ({time_diff.total_seconds() / 3600:.1f} hours ago)")
-                    print(f"[INFO] Coordinates: {lat}, {lon}")
-                    return location_id
-                else:
-                    hours_ago = time_diff.total_seconds() / 3600
-                    print(f"[SKIP] Stale sensor: {location_name} (ID: {location_id}) - Last updated {hours_ago:.1f} hours ago")
+                    # Convert to IST for display
+                    ist_time = convert_to_ist(timestamp_str)
+                    
+                    fresh_sensors.append({
+                        "id": location_id,
+                        "name": location_name,
+                        "last_updated": timestamp_str,
+                        "last_updated_ist": ist_time,
+                        "hours_ago": time_diff.total_seconds() / 3600
+                    })
+                    
+                    # Limit to top 5 fresh sensors
+                    if len(fresh_sensors) >= 5:
+                        break
             
-            except (ValueError, TypeError) as e:
-                print(f"[SKIP] {location_name} (ID: {location_id}) - Failed to parse timestamp: {e}")
+            except (ValueError, TypeError):
                 continue
         
-        # Step C: No fresh sensor found
-        print("[WARNING] No sensors found with data from the last 24 hours.")
-        print("[INFO] Switching to Simulation Mode.")
-        return None
+        if len(fresh_sensors) == 0:
+            print("[WARNING] No sensors found with data from the last 24 hours.")
+            return []
+        
+        print(f"[SUCCESS] Found {len(fresh_sensors)} fresh sensor(s).")
+        return fresh_sensors
     
     except requests.exceptions.RequestException as e:
-        print(f"[WARNING] Failed to discover location: {e}")
-        return None
+        print(f"[WARNING] Failed to discover locations: {e}")
+        return []
     
     except (KeyError, ValueError) as e:
         print(f"[WARNING] Failed to parse location response: {e}")
-        return None
+        return []
+
+
+def get_active_location_id() -> Optional[int]:
+    """
+    Legacy function for backward compatibility.
+    Returns the first available fresh sensor ID.
+    """
+    sensors = discover_available_sensors()
+    if sensors and len(sensors) > 0:
+        return sensors[0]["id"]
+    return None
+
 
 
 
@@ -166,9 +212,13 @@ def generate_simulated_live_data(baseline_mean: float = 150.0, anomaly_probabili
         anomaly_probability: Probability of generating an anomalous value (0-1)
     
     Returns:
-        Tuple of (value, timestamp)
+        Tuple of (value, timestamp in IST format)
     """
-    timestamp = datetime.now().isoformat()
+    # Generate current time in UTC and convert to IST
+    utc_time = datetime.now(timezone.utc)
+    ist_offset = timedelta(hours=5, minutes=30)
+    ist_time = utc_time + ist_offset
+    timestamp = ist_time.strftime("%Y-%m-%d %H:%M:%S IST")
     
     if random.random() < anomaly_probability:
         # Generate anomalous value (spike)
@@ -189,21 +239,23 @@ def generate_simulated_live_data(baseline_mean: float = 150.0, anomaly_probabili
 
 
 
-def fetch_historical_data(limit: int = 100) -> List[float]:
+def fetch_historical_data(limit: int = 100, location_id: Optional[int] = None) -> List[float]:
     """
     Fetches historical air quality data to establish a baseline.
     Falls back to simulated data if API is unavailable.
     
     Args:
         limit: Number of historical data points to retrieve (default: 100)
+        location_id: Optional location ID to fetch data from. If None, auto-discovers.
     
     Returns:
         List of float values representing historical measurements.
         Returns simulated data if API call fails.
     """
     try:
-        # Step 1: Discover active location near Delhi
-        location_id = get_active_location_id()
+        # Step 1: Get location ID (use provided or discover)
+        if location_id is None:
+            location_id = get_active_location_id()
         
         if location_id is None:
             print("[WARNING] No location ID available. Using simulated data.")
@@ -267,23 +319,25 @@ def fetch_historical_data(limit: int = 100) -> List[float]:
 
 
 
-def fetch_live_data(baseline_values: Optional[List[float]] = None) -> Tuple[Optional[float], Optional[str]]:
+def fetch_live_data(baseline_values: Optional[List[float]] = None, location_id: Optional[int] = None) -> Tuple[Optional[float], Optional[str]]:
     """
     Fetches the most recent air quality measurement.
     Falls back to simulated data if API is unavailable.
     
     Args:
         baseline_values: Optional baseline values to calculate realistic simulated data
+        location_id: Optional location ID to fetch data from. If None, auto-discovers.
     
     Returns:
-        Tuple of (value, timestamp) where:
+        Tuple of (value, timestamp in IST format) where:
         - value: The most recent measurement (float)
-        - timestamp: ISO format timestamp string
+        - timestamp: IST format timestamp string
         Returns simulated data if API call fails.
     """
     try:
-        # Step 1: Discover active location near Delhi
-        location_id = get_active_location_id()
+        # Step 1: Get location ID (use provided or discover)
+        if location_id is None:
+            location_id = get_active_location_id()
         
         if location_id is None:
             print("[WARNING] No location ID available. Using simulated data.")
@@ -357,12 +411,15 @@ def fetch_live_data(baseline_values: Optional[List[float]] = None) -> Tuple[Opti
         pm25_result = fresh_results[0]
         
         value = float(pm25_result["value"])
-        # v3 API has different timestamp structure
-        timestamp = pm25_result.get("datetime", {}).get("utc", "Unknown") if isinstance(pm25_result.get("datetime"), dict) else pm25_result.get("datetime", "Unknown")
+        # v3 API has different timestamp structure - extract UTC timestamp
+        timestamp_utc = pm25_result.get("datetime", {}).get("utc", "Unknown") if isinstance(pm25_result.get("datetime"), dict) else pm25_result.get("datetime", "Unknown")
         
-        print(f"[SUCCESS] Retrieved live data from API: {value} µg/m³ at {timestamp}")
+        # Convert to IST for display
+        timestamp_ist = convert_to_ist(timestamp_utc) if timestamp_utc != "Unknown" else "Unknown"
+        
+        print(f"[SUCCESS] Retrieved live data from API: {value} µg/m³ at {timestamp_ist}")
         print(f"[INFO] Using fresh measurement from sensor {pm25_result.get('sensorsId')}")
-        return value, timestamp
+        return value, timestamp_ist
     
     except requests.exceptions.Timeout:
         print("[WARNING] API request timed out. Using simulated data for demo.")

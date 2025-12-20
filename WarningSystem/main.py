@@ -8,7 +8,7 @@ import json
 import time
 import os
 from pathlib import Path
-from src.ingestion import fetch_historical_data, fetch_live_data
+from src.ingestion import fetch_historical_data, fetch_live_data, discover_available_sensors, convert_to_ist
 from src.analysis import detect_anomalies
 from src import config
 from datetime import datetime
@@ -21,7 +21,7 @@ def save_to_json(result: dict, current_value: float, timestamp: str):
     Args:
         result: Analysis result dictionary from detect_anomalies
         current_value: Current measurement value
-        timestamp: Timestamp of the measurement
+        timestamp: Timestamp of the measurement (in IST format)
     """
     # Create data directory if it doesn't exist
     data_dir = Path("data")
@@ -66,7 +66,7 @@ def print_diagnostic_report(result: dict, current_value: float, timestamp: str):
     Args:
         result: Analysis result dictionary from detect_anomalies
         current_value: Current measurement value
-        timestamp: Timestamp of the measurement
+        timestamp: Timestamp of the measurement (in IST format)
     """
     print("\n" + "=" * 70)
     print("  DIAGNOSTIC REPORT")
@@ -108,14 +108,63 @@ def print_diagnostic_report(result: dict, current_value: float, timestamp: str):
     print("\n" + "=" * 70)
 
 
-def run_pipeline():
+def select_sensor_interactively():
+    """
+    Displays available sensors and prompts user to select one.
+    
+    Returns:
+        Selected location ID (int), or None if no sensors available
+    """
+    print("\n" + "=" * 70)
+    print("  SENSOR SELECTION")
+    print("=" * 70 + "\n")
+    
+    # Discover available sensors
+    sensors = discover_available_sensors()
+    
+    if not sensors or len(sensors) == 0:
+        print("[WARNING] No fresh sensors found.")
+        print("[INFO] The system will use simulated data.\n")
+        return None
+    
+    # Display sensor list
+    print(f"Found {len(sensors)} fresh sensor(s):\n")
+    for i, sensor in enumerate(sensors, 1):
+        print(f"{i}. ID: {sensor['id']:5} | {sensor['name']:45} | Last Update: {sensor['last_updated_ist']}")
+    
+    # Get user selection
+    while True:
+        try:
+            choice = input(f"\nSelect a sensor (1-{len(sensors)}): ").strip()
+            choice_num = int(choice)
+            
+            if 1 <= choice_num <= len(sensors):
+                selected = sensors[choice_num - 1]
+                print(f"\n[SELECTED] {selected['name']} (ID: {selected['id']})")
+                print(f"[INFO] Last updated: {selected['last_updated_ist']}\n")
+                return selected['id']
+            else:
+                print(f"[ERROR] Please enter a number between 1 and {len(sensors)}")
+        except ValueError:
+            print("[ERROR] Invalid input. Please enter a number.")
+        except KeyboardInterrupt:
+            print("\n[SYSTEM] Selection cancelled. Exiting...")
+            return None
+
+
+def run_pipeline(location_id=None):
     """
     Executes a single iteration of the monitoring pipeline.
-    Returns True if successful, False otherwise.
+    
+    Args:
+        location_id: Optional location ID to monitor. If None, auto-discovers.
+    
+    Returns:
+        True if successful, False otherwise.
     """
     # Step 1: Fetch Historical Data for Baseline
     print("[PIPELINE] Step 1/3: Establishing Baseline...")
-    historical_data = fetch_historical_data(limit=config.HISTORICAL_LIMIT)
+    historical_data = fetch_historical_data(limit=config.HISTORICAL_LIMIT, location_id=location_id)
     
     if not historical_data:
         print("[WARNING] Failed to establish baseline. Skipping this iteration.")
@@ -126,7 +175,7 @@ def run_pipeline():
     
     # Step 2: Fetch Live Data
     print("[PIPELINE] Step 2/3: Fetching Live Data...")
-    current_value, timestamp = fetch_live_data(historical_data)
+    current_value, timestamp = fetch_live_data(historical_data, location_id=location_id)
     
     if current_value is None:
         print("[WARNING] Failed to fetch live data. Skipping this iteration.")
@@ -151,7 +200,7 @@ def run_pipeline():
     # Step 5: Display Diagnostic Report
     print_diagnostic_report(result, current_value, timestamp)
     
-    print(f"\n[SYSTEM] Pipeline iteration completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"\n[SYSTEM] Pipeline iteration completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}")
     return True
 
 
@@ -166,17 +215,24 @@ def main():
     print(f"[CONFIG] API Key: {'Configured ✓' if config.API_KEY else 'Not configured (using simulated data)'}")
     print()
     
+    # Interactive sensor selection
+    selected_location_id = select_sensor_interactively()
+    
+    if selected_location_id is None:
+        print("[INFO] No sensor selected. Exiting...")
+        return
+    
     # Continuous monitoring loop
     iteration = 0
     while True:
         try:
             iteration += 1
             print(f"\n{'='*70}")
-            print(f"  ITERATION #{iteration} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"  ITERATION #{iteration} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}")
             print(f"{'='*70}\n")
             
-            # Run the pipeline
-            run_pipeline()
+            # Run the pipeline with selected sensor
+            run_pipeline(location_id=selected_location_id)
             
             # Sleep for 5 minutes
             print(f"\n💤 Sleeping for 5 minutes... Press Ctrl+C to stop.")
