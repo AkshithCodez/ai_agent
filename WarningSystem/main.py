@@ -7,9 +7,11 @@ Runs continuously as a background service.
 import json
 import time
 import os
+import sys
 from pathlib import Path
 from src.ingestion import fetch_historical_data, fetch_live_data, discover_available_sensors, convert_to_ist
 from src.analysis import detect_anomalies
+from src.ai_adapter import get_ai_explanation
 from src import config
 from datetime import datetime
 
@@ -38,7 +40,9 @@ def save_to_json(result: dict, current_value: float, timestamp: str):
         "baseline_mean": result.get("baseline_mean"),
         "baseline_std": result.get("baseline_std"),
         "city": config.TARGET_CITY,
-        "parameter": config.PARAMETER
+        "parameter": config.PARAMETER,
+        "ai_explanation": result.get("ai_explanation", "N/A"),
+        "ai_message": result.get("ai_message", "N/A")  # Comprehensive advisory
     }
     
     # Write to file (overwrite mode)
@@ -194,10 +198,48 @@ def run_pipeline(location_id=None):
     
     print("[SUCCESS] Analysis complete.")
     
-    # Step 4: Save to JSON for Dashboard
+    # Step 4: AI Intelligence Report (Comprehensive Advisory)
+    print("\n[AI] 🧠 Generating Comprehensive Intelligence Report...")
+    try:
+        from src.ai_engine import generate_comprehensive_advisory
+        from src.ai_engine import generate_fallback_advisory
+        
+        # Prepare sensor data for AI
+        sensor_data = {
+            "current_value": current_value,
+            "status": result["status"],
+            "z_score": result.get("z_score", 0),
+            "baseline_mean": result.get("baseline_mean", 0),
+            "baseline_std": result.get("baseline_std", 0)
+        }
+        
+        ai_message = generate_comprehensive_advisory(sensor_data)
+        
+        print(f"\n{'='*70}")
+        print("  AI INTELLIGENCE REPORT")
+        print(f"{'='*70}")
+        print(f"\n{ai_message}\n")
+        print(f"{'='*70}\n")
+        
+    except Exception as e:
+        print(f"[WARNING] AI service failed: {e}")
+        # Fallback to status-based message
+        from src.ai_engine import generate_fallback_advisory
+        ai_message = generate_fallback_advisory(result["status"])
+        print(f"\n{'='*70}")
+        print("  AI INTELLIGENCE REPORT (Fallback)")
+        print(f"{'='*70}")
+        print(f"\n{ai_message}\n")
+        print(f"{'='*70}\n")
+    
+    # Add AI message to result
+    result['ai_message'] = ai_message
+    result['ai_explanation'] = ai_message  # Keep for backward compatibility
+    
+    # Step 5: Save to JSON for Dashboard
     save_to_json(result, current_value, timestamp)
     
-    # Step 5: Display Diagnostic Report
+    # Step 6: Display Diagnostic Report
     print_diagnostic_report(result, current_value, timestamp)
     
     print(f"\n[SYSTEM] Pipeline iteration completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}")

@@ -1,0 +1,86 @@
+﻿python : INFO:src.ai_agent:P
+rocessing anomaly: pm25 in 
+Delhi
+At line:1 char:1
++ python debug_output.py 
+2>&1 | Out-File -FilePath 
+debug_output.txt -En ...
++ 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          
+    : NotSpecified: (INFO:  
+  src.ai_age...: pm25 in    
+ Delhi:String) [], Remot    
+eException
+    + FullyQualifiedErrorId 
+    : NativeCommandError
+ 
+======================================================================
+Testing AI Output - Full Debug
+======================================================================
+
+[DEBUG] Calling get_ai_explanation...
+
+[DEBUG] AI Explanation returned successfully
+[DEBUG] Type: <class 'str'>
+[DEBUG] Length: 463 characters
+
+======================================================================
+AI ADVISORY
+======================================================================
+Traceback (most recent call 
+last):
+  File "C:\Users\reddy\Downl
+oads\Hackathon\Agentathon\ai
+_agent\WarningSystem\debug_o
+utput.py", line 39, in 
+<module>
+    print(f"\n{ai_explanatio
+n}\n")
+    ~~~~~^^^^^^^^^^^^^^^^^^^
+^^^^^^
+  File "C:\Program Files\Pyt
+hon313\Lib\encodings\cp1252.
+py", line 19, in encode
+    return codecs.charmap_en
+code(input,self.errors,encod
+ing_table)[0]
+           ~~~~~~~~~~~~~~~~~
+~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^
+UnicodeEncodeError: 
+'charmap' codec can't 
+encode character 
+'\U0001f6a8' in position 2: 
+character maps to 
+<undefined>
+
+During handling of the 
+above exception, another 
+exception occurred:
+
+Traceback (most recent call 
+last):
+  File "C:\Users\reddy\Downl
+oads\Hackathon\Agentathon\ai
+_agent\WarningSystem\debug_o
+utput.py", line 47, in 
+<module>
+    print(f"\n\u274c Test 
+FAILED: {e}")
+    ~~~~~^^^^^^^^^^^^^^^^^^^
+^^^^^^^
+  File "C:\Program Files\Pyt
+hon313\Lib\encodings\cp1252.
+py", line 19, in encode
+    return codecs.charmap_en
+code(input,self.errors,encod
+ing_table)[0]
+           ~~~~~~~~~~~~~~~~~
+~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^
+UnicodeEncodeError: 
+'charmap' codec can't 
+encode character '\u274c' 
+in position 2: character 
+maps to <undefined>
