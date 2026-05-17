@@ -11,15 +11,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Target Configuration
-TARGET_CITY = "Delhi"
+TARGET_CITY = "Hyderabad"
 PARAMETER = "pm25"
 
 # Geographic Coordinates (for satellite data queries)
-# Delhi coordinates: Connaught Place, Central Delhi
+# Hyderabad coordinates: Kokapet area
 LOCATION_COORDS = {
-    "latitude": 28.6139,
-    "longitude": 77.2090
+    "latitude": 17.3850,
+    "longitude": 78.4867
 }
+
+# Hyderabad station ID for OpenAQ API
+HYDERABAD_LOCATION_ID = 346258
 
 # API Configuration
 API_KEY = os.getenv("OPENAQ_API_KEY")  # Load API key from environment

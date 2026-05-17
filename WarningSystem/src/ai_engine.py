@@ -1,6 +1,6 @@
 """
 Comprehensive AI Advisory Generator
-Provides rich, actionable intelligence for pollution monitoring.
+Provides rich, actionable intelligence for air quality monitoring.
 """
 
 from typing import Dict
@@ -20,10 +20,9 @@ def generate_comprehensive_advisory(sensor_data: Dict, satellite_data: Dict = No
             - baseline_mean: Historical average
             - baseline_std: Standard deviation
         satellite_data: Optional dictionary containing:
-            - water: NDWI index data
-            - land: NDVI index data
+            - no2: NO2 index data
+            - aerosol: Aerosol Index data
             - satellite: Satellite name
-            - last_pass: Last pass timestamp
     
     Returns:
         Formatted advisory string with multiple sections
@@ -79,63 +78,60 @@ def generate_comprehensive_advisory(sensor_data: Dict, satellite_data: Dict = No
     advisory_parts.append(f"\n{color_emoji} AQI Category: {aqi_category}")
     advisory_parts.append(f"📊 Baseline Average: {baseline_mean:.1f} µg/m³")
     
-    # Section 2: ENVIRONMENTAL CONTEXT (Satellite Data)
-    # Defensive check: Only display if satellite_data exists and is not unavailable/fallback
+    # Section 2: ENVIRONMENTAL CONTEXT (Air Quality Satellite Data)
+    # ONLY show if we have actual pollution data
     if satellite_data and isinstance(satellite_data, dict):
         data_source = satellite_data.get("data_source", "Unknown")
         
-        # Only show satellite section if we have real or simulated data (not "Unavailable")
         if data_source not in ["Unavailable", "Simulated (Fallback)"]:
-            advisory_parts.append(f"\n\n🛰️ ENVIRONMENTAL CONTEXT")
+            advisory_parts.append(f"\n\n🛰️ ENVIRONMENTAL CONTEXT - AIR QUALITY")
             advisory_parts.append("-" * 50)
         
-        water_data = satellite_data.get('water', {})
-        land_data = satellite_data.get('land', {})
+        no2_data = satellite_data.get('no2', {})
+        aerosol_data = satellite_data.get('aerosol', {})
         
-        ndwi_value = water_data.get('value')
-        ndwi_status = water_data.get('status', 'UNKNOWN')
-        ndvi_value = land_data.get('value')
-        ndvi_status = land_data.get('status', 'UNKNOWN')
+        no2_value = no2_data.get('value')
+        no2_status = no2_data.get('status', 'UNKNOWN')
+        aerosol_value = aerosol_data.get('value')
+        aerosol_status = aerosol_data.get('status', 'UNKNOWN')
         
-        # Only display if values are not None
-        if ndwi_value is not None:
-            advisory_parts.append(f"💧 Water Health (NDWI): {ndwi_value:.3f} - {ndwi_status.replace('_', ' ')}")
+        if no2_value is not None:
+            advisory_parts.append(f"🚗 NO2 (Traffic/Industrial Emissions): {no2_value:.3f} - {no2_status.replace('_', ' ')}")
         else:
-            advisory_parts.append(f"💧 Water Health (NDWI): Data Unavailable")
+            advisory_parts.append(f"🚗 NO2 (Traffic/Industrial Emissions): Data Unavailable")
             
-        if ndvi_value is not None:
-            advisory_parts.append(f"🌳 Land Vegetation (NDVI): {ndvi_value:.3f} - {ndvi_status.replace('_', ' ')}")
+        if aerosol_value is not None:
+            advisory_parts.append(f"💨 Aerosol Index: {aerosol_value:.2f} - {aerosol_status.replace('_', ' ')}")
         else:
-            advisory_parts.append(f"🌳 Land Vegetation (NDVI): Data Unavailable")
+            advisory_parts.append(f"💨 Aerosol Index: Data Unavailable")
         
-        # Correlate satellite data with air quality (only if values exist)
-        if ndvi_value is not None or ndwi_value is not None:
+        # Correlate air quality metrics - ONLY discuss negative impacts if pollution is elevated
+        if no2_value is not None or aerosol_value is not None:
             advisory_parts.append("\n🔗 Environmental Correlations:")
             
-            # NDVI correlation
-            if ndvi_value is not None:
-                if ndvi_value < 0.2:
-                    advisory_parts.append("• Low vegetation cover (Urban Heat Island effect) worsens air pollution")
-                    advisory_parts.append("  - Lack of trees reduces natural air filtration")
-                    advisory_parts.append("  - Concrete surfaces increase temperature and pollutant concentration")
-                elif ndvi_value < 0.35:
-                    advisory_parts.append("• Moderate vegetation provides some natural air filtration")
+            # NO2 correlation - traffic/industrial emissions
+            if no2_value is not None:
+                if no2_value > 0.2:
+                    advisory_parts.append("• High NO2 indicates significant industrial emissions or heavy traffic")
+                    advisory_parts.append("  - Pollution sources likely include nearby industrial zones")
+                    advisory_parts.append("  - Consider traffic diversion routes during peak hours")
+                elif no2_value > 0.1:
+                    advisory_parts.append("• Moderate NO2 levels suggest mixed traffic and light industrial activity")
                 else:
-                    advisory_parts.append("• Good vegetation cover helps filter pollutants naturally")
+                    advisory_parts.append("• Low NO2 indicates minimal traffic and industrial influence")
             
-            # NDWI correlation
-            if ndwi_value is not None:
-                if ndwi_value < 0.0:
-                    advisory_parts.append("• Water stress detected - increased dust and particulate matter likely")
-                    advisory_parts.append("  - Dry conditions contribute to airborne particles")
-                elif ndwi_value < 0.1:
-                    advisory_parts.append("• Stressed water bodies may contribute to dust in the air")
+            # Aerosol correlation - particulate matter
+            if aerosol_value is not None:
+                if aerosol_value > 2.0:
+                    advisory_parts.append("• High aerosol index confirms significant particulate pollution")
+                elif aerosol_value > 1.0:
+                    advisory_parts.append("• Moderate aerosol levels indicate some airborne particles present")
+                elif aerosol_value > 0.0:
+                    advisory_parts.append("• Light aerosol presence - generally acceptable conditions")
                 else:
-                    advisory_parts.append("• Adequate water presence helps reduce dust levels")
+                    advisory_parts.append("• Clear atmospheric conditions with minimal particulates")
         
         advisory_parts.append(f"\n📡 Data Source: {satellite_data.get('satellite', 'Unknown')}")
-        time_range = satellite_data.get('time_range', satellite_data.get('last_pass', 'Unknown'))
-        advisory_parts.append(f"   Time Range: {time_range}")
     
     # Section 3: HEALTH IMPLICATIONS
     advisory_parts.append(f"\n\n🩺 HEALTH IMPLICATIONS")
@@ -169,7 +165,7 @@ def generate_comprehensive_advisory(sensor_data: Dict, satellite_data: Dict = No
         advisory_parts.append("• No health impacts expected for any group")
         advisory_parts.append("• Ideal conditions for outdoor activities")
     
-    # Section 3: IMMEDIATE ACTIONS
+    # Section 4: IMMEDIATE ACTIONS
     advisory_parts.append(f"\n\n🛡️ IMMEDIATE ACTIONS")
     advisory_parts.append("-" * 50)
     

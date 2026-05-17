@@ -4,6 +4,9 @@ Orchestrates the real-time air quality monitoring pipeline.
 Runs continuously as a background service.
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import json
 import time
 import os
@@ -28,11 +31,9 @@ def save_to_json(result: dict, current_value: float, timestamp: str):
         current_value: Current measurement value
         timestamp: Timestamp of the measurement (in IST format)
     """
-    # Create data directory if it doesn't exist
     data_dir = Path("data")
     data_dir.mkdir(exist_ok=True)
     
-    # Prepare output data
     output_data = {
         "timestamp": timestamp,
         "status": result["status"],
@@ -46,10 +47,9 @@ def save_to_json(result: dict, current_value: float, timestamp: str):
         "parameter": config.PARAMETER,
         "satellite_data": result.get("satellite_data", None),
         "ai_explanation": result.get("ai_explanation", "N/A"),
-        "ai_message": result.get("ai_message", "N/A")  # Comprehensive advisory
+        "ai_message": result.get("ai_message", "N/A")
     }
     
-    # Write to file (overwrite mode)
     output_file = data_dir / "latest_alert.json"
     with open(output_file, 'w') as f:
         json.dump(output_data, f, indent=2)
@@ -62,7 +62,7 @@ def print_banner():
     print("=" * 70)
     print("  EARLY WARNING INTELLIGENCE LAYER")
     print("  Environmental Monitoring System v1.0")
-    print("  Background Service Mode")
+    print("  Target: Hyderabad, India")
     print("=" * 70)
     print()
 
@@ -80,7 +80,6 @@ def print_diagnostic_report(result: dict, current_value: float, timestamp: str):
     print("  DIAGNOSTIC REPORT")
     print("=" * 70)
     
-    # Status with color indicators
     status_symbols = {
         "NORMAL": "✓",
         "WARNING": "⚠",
@@ -130,11 +129,10 @@ def select_sensor_interactively(location_coords: dict):
     print("  SENSOR SELECTION")
     print("=" * 70 + "\n")
     
-    # Discover available sensors
     sensors = discover_available_sensors(
         lat=location_coords.get("latitude"),
         lon=location_coords.get("longitude"),
-        radius=10000  # 10km radius
+        radius=10000
     )
     
     if not sensors or len(sensors) == 0:
@@ -142,12 +140,10 @@ def select_sensor_interactively(location_coords: dict):
         print("[INFO] The system will use simulated data.\n")
         return None
     
-    # Display sensor list
     print(f"Found {len(sensors)} fresh sensor(s):\n")
     for i, sensor in enumerate(sensors, 1):
         print(f"{i}. ID: {sensor['id']:5} | {sensor['name']:45} | Last Update: {sensor['last_updated_ist']}")
     
-    # Get user selection
     while True:
         try:
             choice = input(f"\nSelect a sensor (1-{len(sensors)}): ").strip()
@@ -179,7 +175,6 @@ def run_pipeline(location_id=None, sentinel_client=None, location_coords=None):
     Returns:
         True if successful, False otherwise.
     """
-    # Step 1: Fetch Historical Data for Baseline
     print("[PIPELINE] Step 1/3: Establishing Baseline...")
     historical_data = fetch_historical_data(limit=config.HISTORICAL_LIMIT, location_id=location_id)
     
@@ -190,7 +185,6 @@ def run_pipeline(location_id=None, sentinel_client=None, location_coords=None):
     print(f"[SUCCESS] Baseline established with {len(historical_data)} data points.")
     print()
     
-    # Step 2: Fetch Live Data
     print("[PIPELINE] Step 2/3: Fetching Live Data...")
     current_value, timestamp = fetch_live_data(historical_data, location_id=location_id)
     
@@ -201,40 +195,32 @@ def run_pipeline(location_id=None, sentinel_client=None, location_coords=None):
     print(f"[SUCCESS] Live data retrieved: {current_value} µg/m³")
     print()
     
-    # Step 2.5: Fetch Satellite Data (Real API)
     print("[PIPELINE] Step 2.5/4: Fetching Satellite Data from Sentinel Hub...")
     sat_data = None
-    sat_image_path = None
     
     if sentinel_client and location_coords:
         try:
-            # Get coordinates from location_coords parameter
             lat = location_coords.get("latitude")
             lon = location_coords.get("longitude")
             
-            # Fetch NDVI/NDWI statistics
-            sat_data = sentinel_client.get_geo_stats(lat, lon)
+            sat_data = sentinel_client.get_air_quality_stats(lat, lon)
             
             if sat_data and sat_data.get("data_source") != "Unavailable":
                 print(f"[SUCCESS] Satellite statistics retrieved")
                 print(f"[SATELLITE] 📊 {sat_data['satellite']} Data ({sat_data.get('data_source', 'Live API')})")
                 
-                water = sat_data.get('water', {})
-                land = sat_data.get('land', {})
+                no2 = sat_data.get('no2', {})
+                aerosol = sat_data.get('aerosol', {})
                 
-                if water.get('value') is not None:
-                    print(f"|-- 💧 Water ({water['index']}): {water['value']:.3f} ({water['status']})")
+                if no2.get('value') is not None:
+                    print(f"|-- 🚗 NO2 (Traffic/Industrial): {no2['value']:.3f} ({no2['status']})")
                 else:
-                    print(f"|-- 💧 Water: Data Unavailable")
+                    print(f"|-- 🚗 NO2: Data Unavailable")
                     
-                if land.get('value') is not None:
-                    print(f"|-- 🌳 Land ({land['index']}): {land['value']:.3f} ({land['status']})")
+                if aerosol.get('value') is not None:
+                    print(f"|-- 💨 Aerosol Index: {aerosol['value']:.2f} ({aerosol['status']})")
                 else:
-                    print(f"|-- 🌳 Land: Data Unavailable")
-                
-                # Fetch satellite image
-                print(f"[SATELLITE] 📸 Fetching satellite imagery...")
-                sat_image_path = sentinel_client.get_satellite_image(lat, lon)
+                    print(f"|-- 💨 Aerosol Index: Data Unavailable")
                 
                 print()
             else:
@@ -249,7 +235,6 @@ def run_pipeline(location_id=None, sentinel_client=None, location_coords=None):
         print(f"[INFO] Continuing with air quality data only")
         print()
     
-    # Step 3: Perform Anomaly Detection
     print("[PIPELINE] Step 3/4: Analyzing Anomalies...")
     result = detect_anomalies(historical_data, current_value)
     
@@ -259,17 +244,14 @@ def run_pipeline(location_id=None, sentinel_client=None, location_coords=None):
     
     print("[SUCCESS] Analysis complete.")
     
-    # Add satellite data to result
     if sat_data:
         result['satellite_data'] = sat_data
     
-    # Step 4: AI Intelligence Report (Comprehensive Advisory)
     print("\n[AI] 🧠 Generating Comprehensive Intelligence Report...")
     try:
         from src.ai_engine import generate_comprehensive_advisory
         from src.ai_engine import generate_fallback_advisory
         
-        # Prepare sensor data for AI
         sensor_data = {
             "current_value": current_value,
             "status": result["status"],
@@ -288,7 +270,6 @@ def run_pipeline(location_id=None, sentinel_client=None, location_coords=None):
         
     except Exception as e:
         print(f"[WARNING] AI service failed: {e}")
-        # Fallback to status-based message
         from src.ai_engine import generate_fallback_advisory
         ai_message = generate_fallback_advisory(result["status"])
         print(f"\n{'='*70}")
@@ -297,14 +278,10 @@ def run_pipeline(location_id=None, sentinel_client=None, location_coords=None):
         print(f"\n{ai_message}\n")
         print(f"{'='*70}\n")
     
-    # Add AI message to result
     result['ai_message'] = ai_message
-    result['ai_explanation'] = ai_message  # Keep for backward compatibility
+    result['ai_explanation'] = ai_message
     
-    # Step 5: Save to JSON for Dashboard
     save_to_json(result, current_value, timestamp)
-    
-    # Step 6: Display Diagnostic Report
     print_diagnostic_report(result, current_value, timestamp)
     
     print(f"\n[SYSTEM] Pipeline iteration completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}")
@@ -322,14 +299,12 @@ def get_location_coordinates():
     print("  LOCATION SETUP")
     print("=" * 70 + "\n")
     
-    # Option to use default Delhi coordinates
-    use_default = input("Use default location (Delhi, India)? (y/n): ").strip().lower()
+    use_default = input("Use default location (Hyderabad, India)? (y/n): ").strip().lower()
     
     if use_default == 'y':
-        print(f"[SELECTED] Using Delhi, India (28.6139°N, 77.2090°E)\n")
-        return {"latitude": 28.6139, "longitude": 77.2090, "name": "Delhi, India"}
+        print(f"[SELECTED] Using Hyderabad, India (17.3850°N, 78.4867°E)\n")
+        return {"latitude": 17.3850, "longitude": 78.4867, "name": "Hyderabad, India"}
     
-    # Get custom location
     while True:
         try:
             location_name = input("Enter location (city, country): ").strip()
@@ -365,36 +340,31 @@ def get_location_coordinates():
 def main():
     """Main execution with continuous monitoring loop."""
     
-    # System Initialization
     print_banner()
     print(f"[SYSTEM] Starting Early Warning Intelligence Layer...")
     print(f"[CONFIG] Target City: {config.TARGET_CITY}")
     print(f"[CONFIG] Parameter: {config.PARAMETER}")
-    print(f"[CONFIG] OpenAQ API: {'Configured ✓' if config.API_KEY else 'Not configured'}")
+    print(f"[CONFIG] OpenAQ API: {'Configured' if config.API_KEY else 'Not configured'}")
     
-    # Initialize Sentinel Hub client
     print(f"[CONFIG] Initializing Sentinel Hub client...")
     sentinel_client = SentinelClient()
     if sentinel_client.client_id and sentinel_client.client_secret:
-        print(f"[CONFIG] Sentinel Hub: Configured ✓")
+        print(f"[CONFIG] Sentinel Hub: Configured")
     else:
         print(f"[CONFIG] Sentinel Hub: Not configured (will skip satellite data)")
     print()
     
-    # Get location coordinates
     location_coords = get_location_coordinates()
     if not location_coords:
         print("[INFO] Location setup failed. Exiting...")
         return
     
-    # Interactive sensor selection
     selected_location_id = select_sensor_interactively(location_coords)
     
     if selected_location_id is None:
         print("[INFO] No sensor selected. Exiting...")
         return
     
-    # Continuous monitoring loop
     iteration = 0
     while True:
         try:
@@ -404,16 +374,14 @@ def main():
             print(f"  Location: {location_coords.get('name', 'Unknown')}")
             print(f"{'='*70}\n")
             
-            # Run the pipeline with selected sensor and location
             run_pipeline(
                 location_id=selected_location_id,
                 sentinel_client=sentinel_client,
                 location_coords=location_coords
             )
             
-            # Sleep for 5 minutes
             print(f"\n💤 Sleeping for 5 minutes... Press Ctrl+C to stop.")
-            time.sleep(300)  # 5 minutes = 300 seconds
+            time.sleep(300)
             
         except KeyboardInterrupt:
             print("\n\n[SYSTEM] Received shutdown signal (Ctrl+C)")
@@ -426,7 +394,7 @@ def main():
         except Exception as e:
             print(f"\n[ERROR] Unexpected error in pipeline: {e}")
             print("[SYSTEM] Continuing to next iteration after error...")
-            time.sleep(60)  # Wait 1 minute before retrying after error
+            time.sleep(60)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ from .ai_agent import EnvironmentalAIAgent, AnomalyInput, PollutantType, Severit
 
 
 def get_ai_explanation(analysis_result: Dict, current_value: float, timestamp: str, 
-                       location: str = "Delhi", pollutant: str = "pm25") -> str:
+                        location: str = "Hyderabad", pollutant: str = "pm25") -> str:
     """
     Get AI-generated explanation for pollution anomaly.
     
@@ -18,7 +18,7 @@ def get_ai_explanation(analysis_result: Dict, current_value: float, timestamp: s
         analysis_result: Result dictionary from detect_anomalies()
         current_value: Current pollutant value (µg/m³)
         timestamp: IST timestamp string
-        location: Location name (default: "Delhi")
+        location: Location name (default: "Hyderabad")
         pollutant: Pollutant type (default: "pm25")
     
     Returns:
