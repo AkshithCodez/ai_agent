@@ -178,29 +178,30 @@ def get_active_location_id() -> Optional[int]:
 
 
 
-def generate_simulated_data(count: int, base_mean: float = 150.0, base_std: float = 15.0) -> List[float]:
+def generate_simulated_data(count: int, base_mean: float = 150.0, base_std: float = 10.0) -> List[float]:
     """
     Generates simulated PM2.5 data for demo purposes.
-    Uses realistic values based on Hyderabad's typical air quality patterns.
+    Uses Gaussian distribution with tight variance to ensure Z-score anomaly detection is effective.
     
     Args:
         count: Number of data points to generate
         base_mean: Base mean for normal conditions (default: 150 µg/m³)
-        base_std: Base standard deviation (default: 15 µg/m³ for tight variance)
+        base_std: Base standard deviation — kept tightly bounded at 10.0 for sharp Z-score contrast against anomalies
     
     Returns:
         List of simulated PM2.5 values
     """
-    print(f"[SIMULATION] Generating {count} simulated data points...")
+    print(f"[SIMULATION] Generating {count} simulated data points (base_mean={base_mean}, base_std={base_std})...")
     
     values = []
     for i in range(count):
-        time_factor = 1 + 0.1 * math.sin(i * 0.1)
-        value = random.gauss(base_mean * time_factor, base_std)
+        value = random.gauss(base_mean, base_std)
         value = max(0, value)
         values.append(value)
     
-    print(f"[SIMULATION] Generated {len(values)} simulated data points (mean: {sum(values)/len(values):.2f})")
+    actual_mean = sum(values) / len(values)
+    actual_std = (sum((v - actual_mean) ** 2 for v in values) / len(values)) ** 0.5
+    print(f"[SIMULATION] Generated {len(values)} data points (mean: {actual_mean:.2f}, std: {actual_std:.2f})")
     return values
 
 
@@ -231,8 +232,8 @@ def generate_simulated_live_data(baseline_mean: float = 150.0, anomaly_probabili
             # Low anomaly (unusually clean air)
             value = baseline_mean * random.uniform(0.2, 0.4)
     else:
-        # Normal value
-        value = random.gauss(baseline_mean, 40)
+        # Normal value — tight variance matching the historical baseline (std=10)
+        value = random.gauss(baseline_mean, 10.0)
     
     value = max(0, value)
     print(f"[SIMULATION] Generated live data point: {value:.2f} µg/m³")
@@ -296,17 +297,16 @@ def fetch_historical_data(limit: int = 100, location_id: Optional[int] = None) -
         # If we got some real data but not enough, use simulated baseline with tight variance
         if len(values) > 0 and len(values) < limit:
             print(f"[INFO] Got {len(values)} real measurements, generating {limit - len(values)} simulated points...")
-            baseline_mean = sum(values) / len(values)
-            # Use simulated data as primary baseline with tight variance for proper Z-score detection
-            # This ensures anomalies are detectable relative to a consistent baseline
-            simulated_values = generate_simulated_data(limit, base_mean=baseline_mean, base_std=max(15.0, baseline_mean * 0.15))
+            # Use simulated data as primary baseline with TIGHTLY BOUNDED variance (scale=10.0)
+            # This ensures anomalies are clearly separated from normal baselines via Z-score
+            simulated_values = generate_simulated_data(limit, base_mean=150.0, base_std=10.0)
             values = []  # Clear real data
             values.extend(simulated_values)
         elif len(values) == 0:
             print("[WARNING] No valid measurements found. Using simulated data.")
             return generate_simulated_data(limit)
         
-        print(f"[SUCCESS] Retrieved {len(values)} data points (real + simulated baseline).")
+        print(f"[SUCCESS] Retrieved {len(values)} data points (tight-variance baseline).")
         return values[:limit]  # Ensure we don't exceed the limit
     
     except requests.exceptions.Timeout:

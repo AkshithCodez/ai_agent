@@ -1,18 +1,17 @@
 """
 Simple test for satellite data only
 """
-from src.satellite import fetch_sentinel_indices
+from src.satellite import fetch_sentinel_air_quality
 import json
 
-print("Testing Satellite Module...")
+print("Testing Sentinel-5P Air Quality Module...")
 print("=" * 50)
 
-# Test multiple times to see variation
 for i in range(3):
     print(f"\nTest Run {i+1}:")
-    data = fetch_sentinel_indices(28.6139, 77.2090)
-    print(f"  NDWI: {data['water']['value']:.3f} ({data['water']['status']})")
-    print(f"  NDVI: {data['land']['value']:.3f} ({data['land']['status']})")
+    data = fetch_sentinel_air_quality(17.3850, 78.4867)
+    print(f"  🚗 NO2: {data['no2']['value']:.3f} ({data['no2']['status']})")
+    print(f"  💨 Aerosol Index: {data['aerosol']['value']:.2f} ({data['aerosol']['status']})")
     print(f"  Last Pass: {data['last_pass']}")
 
 print("\n" + "=" * 50)

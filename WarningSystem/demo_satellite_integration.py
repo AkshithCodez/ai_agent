@@ -1,33 +1,33 @@
 """
-Demonstration of complete satellite integration
-Shows how satellite data flows through the system
+Demonstration of complete Sentinel-5P satellite integration
+Shows how air quality data (NO2, Aerosol Index) flows through the system
 """
 
-from src.satellite import fetch_sentinel_indices
+from src.satellite import fetch_sentinel_air_quality
 from src.ai_engine import generate_comprehensive_advisory
 from src import config
 import json
 
 print("=" * 70)
-print("  SATELLITE DATA INTEGRATION DEMONSTRATION")
+print("  SENTINEL-5P AIR QUALITY INTEGRATION DEMONSTRATION")
 print("=" * 70)
 
-# Step 1: Fetch Satellite Data
-print("\n[STEP 1] Fetching Satellite Data for Delhi...")
-sat_data = fetch_sentinel_indices(
+# Step 1: Fetch Sentinel-5P Air Quality Data
+print("\n[STEP 1] Fetching Sentinel-5P Air Quality Data for Hyderabad...")
+sat_data = fetch_sentinel_air_quality(
     config.LOCATION_COORDS["latitude"],
     config.LOCATION_COORDS["longitude"]
 )
 
 print(f"[SATELLITE] {sat_data['satellite']} Data Loaded")
-print(f"|-- Water ({sat_data['water']['index']}): {sat_data['water']['value']:.3f} ({sat_data['water']['status']})")
-print(f"|-- Land ({sat_data['land']['index']}): {sat_data['land']['value']:.3f} ({sat_data['land']['status']})")
+print(f"|-- 🚗 NO2 ({sat_data['no2']['index']}): {sat_data['no2']['value']:.3f} ({sat_data['no2']['status']})")
+print(f"|-- 💨 Aerosol ({sat_data['aerosol']['index']}): {sat_data['aerosol']['value']:.2f} ({sat_data['aerosol']['status']})")
 print(f"|-- Last Pass: {sat_data['last_pass']}")
 
 # Step 2: Simulate Air Quality Data
 print("\n[STEP 2] Simulating Air Quality Analysis...")
 sensor_data = {
-    "current_value": 125.8,  # Unhealthy level
+    "current_value": 125.8,
     "status": "DISTRESS",
     "z_score": 2.3,
     "baseline_mean": 68.5,
@@ -35,7 +35,7 @@ sensor_data = {
 }
 print(f"PM2.5: {sensor_data['current_value']} µg/m³ (Status: {sensor_data['status']})")
 
-# Step 3: Generate AI Advisory with Satellite Data
+# Step 3: Generate AI Advisory with Air Quality Satellite Data
 print("\n[STEP 3] Generating AI Advisory with Environmental Context...")
 print("=" * 70)
 advisory = generate_comprehensive_advisory(sensor_data, satellite_data=sat_data)
@@ -55,7 +55,7 @@ print(json.dumps(export_data, indent=2))
 
 print("\n" + "=" * 70)
 print("  DEMONSTRATION COMPLETE")
-print("  ✅ Satellite data successfully integrated")
-print("  ✅ AI synthesizes Air, Water, and Land metrics")
-print("  ✅ Complete environmental intelligence system")
+print("  ✅ Sentinel-5P air quality data successfully integrated")
+print("  ✅ AI synthesizes PM2.5 with NO2/Aerosol metrics")
+print("  ✅ Air pollution intelligence system operational")
 print("=" * 70)

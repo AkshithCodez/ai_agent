@@ -11,27 +11,14 @@ def generate_comprehensive_advisory(sensor_data: Dict, satellite_data: Dict = No
     """
     Generates a comprehensive advisory with situation summary, environmental context,
     health implications, and actions.
-    
-    Args:
-        sensor_data: Dictionary containing:
-            - current_value: PM2.5 value (µg/m³)
-            - status: Alert status (NORMAL/WARNING/DISTRESS/CRITICAL)
-            - z_score: Statistical deviation
-            - baseline_mean: Historical average
-            - baseline_std: Standard deviation
-        satellite_data: Optional dictionary containing:
-            - no2: NO2 index data
-            - aerosol: Aerosol Index data
-            - satellite: Satellite name
-    
-    Returns:
-        Formatted advisory string with multiple sections
     """
     
     current_value = sensor_data.get("current_value", 0)
     status = sensor_data.get("status", "NORMAL")
     z_score = sensor_data.get("z_score", 0)
     baseline_mean = sensor_data.get("baseline_mean", 0)
+    
+    is_good_quality = current_value <= 12
     
     # Determine AQI category
     if current_value <= 12:
@@ -60,7 +47,12 @@ def generate_comprehensive_advisory(sensor_data: Dict, satellite_data: Dict = No
     advisory_parts.append("🛑 SITUATION SUMMARY")
     advisory_parts.append("-" * 50)
     
-    if status == "CRITICAL":
+    if is_good_quality and status == "NORMAL":
+        advisory_parts.append(f"✅ NORMAL AIR QUALITY")
+        advisory_parts.append(f"PM2.5 levels are {current_value:.1f} µg/m³.")
+        advisory_parts.append(f"Conditions are within expected parameters.")
+        advisory_parts.append(f"Air quality is good - no deterioration detected.")
+    elif status == "CRITICAL":
         advisory_parts.append(f"⚠️ CRITICAL AIR QUALITY EMERGENCY")
         advisory_parts.append(f"PM2.5 levels have reached {current_value:.1f} µg/m³, which is")
         advisory_parts.append(f"{abs(z_score):.1f} standard deviations {'above' if z_score > 0 else 'below'} normal levels.")
